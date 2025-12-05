@@ -1,6 +1,6 @@
 {
   "name": "caf-dashboard",
-  "homepage": "https://d6ewasupervisor-netizen.github.io/caf-dashboard",
+  "homepage": ".",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
