@@ -1,0 +1,21 @@
+{
+  "files": {
+    "main.css": "/caf-dashboard/static/css/main.e6c13ad2.css",
+    "main.js": "/caf-dashboard/static/js/main.8baccf28.js",
+    "static/js/239.067c31cb.chunk.js": "/caf-dashboard/static/js/239.067c31cb.chunk.js",
+    "static/js/977.dc69c444.chunk.js": "/caf-dashboard/static/js/977.dc69c444.chunk.js",
+    "static/js/455.336228e0.chunk.js": "/caf-dashboard/static/js/455.336228e0.chunk.js",
+    "static/js/453.1ee711b6.chunk.js": "/caf-dashboard/static/js/453.1ee711b6.chunk.js",
+    "index.html": "/caf-dashboard/index.html",
+    "main.e6c13ad2.css.map": "/caf-dashboard/static/css/main.e6c13ad2.css.map",
+    "main.8baccf28.js.map": "/caf-dashboard/static/js/main.8baccf28.js.map",
+    "239.067c31cb.chunk.js.map": "/caf-dashboard/static/js/239.067c31cb.chunk.js.map",
+    "977.dc69c444.chunk.js.map": "/caf-dashboard/static/js/977.dc69c444.chunk.js.map",
+    "455.336228e0.chunk.js.map": "/caf-dashboard/static/js/455.336228e0.chunk.js.map",
+    "453.1ee711b6.chunk.js.map": "/caf-dashboard/static/js/453.1ee711b6.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.8baccf28.js"
+  ]
+}
