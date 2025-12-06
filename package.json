@@ -1,5 +1,8 @@
 {
   "name": "caf-dashboard",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "homepage": ".",
   "version": "0.1.0",
   "private": true,
