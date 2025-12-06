@@ -24,6 +24,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "prebuild": "rm -rf node_modules package-lock.json && npm install",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
     "build": "react-scripts build",
