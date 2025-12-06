@@ -29,16 +29,34 @@ module.exports = async function (context, req) {
         // 4. Handle the specific request
         const searchTerm = req.query.search;
         const supervisorId = req.query.supervisorId;
+        const userEmail = req.query.email;
 
-        if (supervisorId) {
-            // CASE A: Get Direct Reports
+        if (userEmail) {
+            // CASE A: Get user info and direct reports by email (for logged-in user)
+            const userResponse = await client.api(`/users/${userEmail}`)
+                .select("id,displayName,jobTitle,mail")
+                .get();
+
+            const reportsResponse = await client.api(`/users/${userEmail}/directReports`)
+                .select("id,displayName,jobTitle,mail")
+                .get();
+
+            context.res = {
+                body: {
+                    user: userResponse,
+                    directReports: reportsResponse.value
+                }
+            };
+
+        } else if (supervisorId) {
+            // CASE B: Get Direct Reports by supervisor ID
             const response = await client.api(`/users/${supervisorId}/directReports`)
                 .select("id,displayName,jobTitle,mail")
                 .get();
             context.res = { body: response.value };
 
         } else if (searchTerm) {
-            // CASE B: Search for a User
+            // CASE C: Search for a User
             const response = await client.api('/users')
                 .filter(`startswith(displayName, '${searchTerm}')`)
                 .select("id,displayName,jobTitle,mail")
@@ -47,7 +65,7 @@ module.exports = async function (context, req) {
             context.res = { body: response.value };
 
         } else {
-            context.res = { status: 400, body: "Please provide a 'search' term or 'supervisorId'." };
+            context.res = { status: 400, body: "Please provide 'email', 'search' term, or 'supervisorId'." };
         }
 
     } catch (error) {
