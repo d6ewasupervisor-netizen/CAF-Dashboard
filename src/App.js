@@ -80,16 +80,40 @@ const generatePDF = (data) => {
 // 1. Dashboard Component
 const Dashboard = () => {
   const [cafs, setCafs] = useState([]);
+  const [directReports, setDirectReports] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { accounts } = useMsal();
   const userName = accounts[0]?.name || "Supervisor";
+  const userId = accounts[0]?.localAccountId || "";
 
+  // Fetch current user's direct reports
+  useEffect(() => {
+    const loadDirectReports = async () => {
+      if (!userId) return;
+      try {
+        const res = await fetch(`/api/users?supervisorId=${userId}`);
+        const data = await res.json();
+        setDirectReports(data);
+      } catch (error) { console.error("Error loading direct reports:", error); }
+    };
+    loadDirectReports();
+  }, [userId]);
+
+  // Fetch all CAFs and filter by direct reports
   useEffect(() => {
     const q = query(collection(db, "cafs"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setCafs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
     });
     return unsubscribe;
   }, []);
+
+  // Filter CAFs to only show those for my direct reports
+  const directReportIds = directReports.map(dr => dr.id);
+  const filteredCafs = directReportIds.length > 0
+    ? cafs.filter(caf => directReportIds.includes(caf.associateId))
+    : [];
 
   return (
     <div style={styles.container}>
@@ -98,22 +122,31 @@ const Dashboard = () => {
         <Link to="/create"><button style={styles.btn}>+ Create New CAF</button></Link>
       </div>
       <hr />
-      {cafs.map(caf => (
-        <div key={caf.id} style={styles.card}>
-          <h3>{caf.associateName} - {TEMPLATES[caf.templateKey]?.label}</h3>
-          <p>Status: <strong style={{color: caf.status === 'Completed' ? 'green' : 'orange'}}>{caf.status}</strong></p>
-          {caf.status === 'Completed' ? (
-             <button style={styles.btn} onClick={() => generatePDF(caf)}>Download Completed PDF</button>
-          ) : (
-             <div>
-               <p>Send this link to associate:</p>
-               <code style={{background:'#eee', padding:'10px', display:'block', wordBreak:'break-all'}}>
-                 {window.location.href.split('#')[0]}#/sign/{caf.id}
-               </code>
-             </div>
-          )}
-        </div>
-      ))}
+      {loading ? (
+        <p>Loading...</p>
+      ) : filteredCafs.length === 0 ? (
+        <p style={{textAlign: 'center', color: '#666', padding: '40px'}}>
+          No corrective action forms found for your direct reports.
+        </p>
+      ) : (
+        filteredCafs.map(caf => (
+          <div key={caf.id} style={styles.card}>
+            <h3>{caf.associateName} - {TEMPLATES[caf.templateKey]?.label}</h3>
+            <p>Status: <strong style={{color: caf.status === 'Completed' ? 'green' : 'orange'}}>{caf.status}</strong></p>
+            <p style={{fontSize: '0.85em', color: '#666'}}>Created by: {caf.supervisorName}</p>
+            {caf.status === 'Completed' ? (
+               <button style={styles.btn} onClick={() => generatePDF(caf)}>Download Completed PDF</button>
+            ) : (
+               <div>
+                 <p>Send this link to associate:</p>
+                 <code style={{background:'#eee', padding:'10px', display:'block', wordBreak:'break-all'}}>
+                   {window.location.href.split('#')[0]}#/sign/{caf.id}
+                 </code>
+               </div>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 };
@@ -123,23 +156,39 @@ const CreateCAF = () => {
   const navigate = useNavigate();
   const sigPad = useRef({});
   const { accounts } = useMsal();
-  
-  // Auto-fill supervisor name from Azure AD
+
+  // Auto-fill supervisor name and ID from Azure AD
   const currentUser = accounts[0]?.name || "";
+  const currentUserId = accounts[0]?.localAccountId || "";
 
   const [supervisorSearch, setSupervisorSearch] = useState(currentUser);
   const [searchResults, setSearchResults] = useState([]);
   const [directReports, setDirectReports] = useState([]);
   const [loading, setLoading] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     templateKey: 'attendance',
-    associateName: '', associateId: '', 
+    associateName: '', associateId: '',
     supervisorName: currentUser,
-    discussionDate: new Date().toISOString().split('T')[0], 
+    discussionDate: new Date().toISOString().split('T')[0],
     program: '', storeLocation: '', priorDate: '', priorSubject: '',
     details: '', requiredImprovement: ''
   });
+
+  // Auto-load current user's direct reports on mount
+  useEffect(() => {
+    const loadMyDirectReports = async () => {
+      if (!currentUserId) return;
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/users?supervisorId=${currentUserId}`);
+        const data = await res.json();
+        setDirectReports(data);
+      } catch (error) { console.error("Error loading direct reports:", error); }
+      setLoading(false);
+    };
+    loadMyDirectReports();
+  }, [currentUserId]);
 
   // API Search
   const searchUsers = async (term) => {
@@ -155,7 +204,7 @@ const CreateCAF = () => {
   const selectSupervisor = async (user) => {
     setSupervisorSearch(user.displayName);
     setFormData({ ...formData, supervisorName: user.displayName });
-    setSearchResults([]); 
+    setSearchResults([]);
     setLoading(true);
     try {
       const res = await fetch(`/api/users?supervisorId=${user.id}`);
