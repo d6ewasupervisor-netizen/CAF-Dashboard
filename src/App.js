@@ -123,53 +123,59 @@ const CreateCAF = () => {
   const navigate = useNavigate();
   const sigPad = useRef({});
   const { accounts } = useMsal();
-  
-  // Auto-fill supervisor name from Azure AD
-  const currentUser = accounts[0]?.name || "";
 
-  const [supervisorSearch, setSupervisorSearch] = useState(currentUser);
-  const [searchResults, setSearchResults] = useState([]);
+  // Get logged-in user info from Azure AD
+  const currentUserName = accounts[0]?.name || "";
+  const currentUserEmail = accounts[0]?.username || "";
+
   const [directReports, setDirectReports] = useState([]);
-  const [loading, setLoading] = useState(false);
-  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const [formData, setFormData] = useState({
     templateKey: 'attendance',
-    associateName: '', associateId: '', 
-    supervisorName: currentUser,
-    discussionDate: new Date().toISOString().split('T')[0], 
+    associateName: '', associateId: '',
+    supervisorName: currentUserName,
+    supervisorEmail: currentUserEmail,
+    discussionDate: new Date().toISOString().split('T')[0],
     program: '', storeLocation: '', priorDate: '', priorSubject: '',
     details: '', requiredImprovement: ''
   });
 
-  // API Search
-  const searchUsers = async (term) => {
-    setSupervisorSearch(term);
-    if (term.length < 3) { setSearchResults([]); return; }
-    try {
-      const res = await fetch(`/api/users?search=${term}`);
-      const data = await res.json();
-      setSearchResults(data);
-    } catch (error) { console.error("API Error:", error); }
-  };
-
-  const selectSupervisor = async (user) => {
-    setSupervisorSearch(user.displayName);
-    setFormData({ ...formData, supervisorName: user.displayName });
-    setSearchResults([]); 
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/users?supervisorId=${user.id}`);
-      const data = await res.json();
-      setDirectReports(data);
-    } catch (error) { console.error("API Error:", error); }
-    setLoading(false);
-  };
+  // Fetch direct reports on component mount using logged-in user's email
+  useEffect(() => {
+    const fetchDirectReports = async () => {
+      if (!currentUserEmail) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/users?email=${encodeURIComponent(currentUserEmail)}`);
+        const data = await res.json();
+        if (data.directReports) {
+          setDirectReports(data.directReports);
+        }
+        if (data.user) {
+          setFormData(prev => ({
+            ...prev,
+            supervisorName: data.user.displayName,
+            supervisorEmail: data.user.mail
+          }));
+        }
+      } catch (err) {
+        console.error("API Error:", err);
+        setError("Unable to load direct reports. Please try again.");
+      }
+      setLoading(false);
+    };
+    fetchDirectReports();
+  }, [currentUserEmail]);
 
   const selectAssociate = (associate) => {
     setFormData({
       ...formData,
       associateName: associate.displayName,
-      associateId: associate.id 
+      associateId: associate.mail || associate.id
     });
   };
 
@@ -193,33 +199,35 @@ const CreateCAF = () => {
       <h2>Create Corrective Action Form</h2>
       <div style={styles.card}>
         <h3 style={styles.sectionHeader}>1. General Information</h3>
-        <div style={{...styles.inputGroup, position: 'relative'}}>
-            <label style={styles.label}>Supervisor Name (Search Directory)</label>
-            <input style={styles.input} value={supervisorSearch} 
-              onChange={(e) => searchUsers(e.target.value)}
-              placeholder="Search supervisor..." />
-            {searchResults.length > 0 && (
-              <div style={styles.suggestions}>
-                {searchResults.map((u) => (
-                    <div key={u.id} style={styles.suggestionItem} onClick={() => selectSupervisor(u)}>
-                      <strong>{u.displayName}</strong> ({u.jobTitle || 'No Title'})
-                    </div>
-                ))}
-              </div>
-            )}
+
+        {/* Supervisor Info - Auto-populated from logged-in user */}
+        <div style={{display:'flex', gap:'10px', marginBottom: '15px'}}>
+          <div style={{flex:1}}>
+            <label style={styles.label}>Supervisor Name</label>
+            <input style={{...styles.input, backgroundColor: '#f5f5f5'}} value={formData.supervisorName} readOnly />
+          </div>
+          <div style={{flex:1}}>
+            <label style={styles.label}>Supervisor Email</label>
+            <input style={{...styles.input, backgroundColor: '#f5f5f5'}} value={formData.supervisorEmail} readOnly />
+          </div>
         </div>
 
-        {loading && <p>Loading reports...</p>}
+        {/* Direct Reports Selection */}
+        {loading && <p>Loading your direct reports...</p>}
+        {error && <p style={{color: 'red'}}>{error}</p>}
+        {!loading && directReports.length === 0 && !error && (
+          <p style={{color: '#666', fontStyle: 'italic'}}>No direct reports found for your account.</p>
+        )}
         {directReports.length > 0 && (
             <div style={{marginBottom: '20px'}}>
-                <label style={styles.label}>Select Associate:</label>
+                <label style={styles.label}>Select Associate (Your Direct Reports):</label>
                 <div style={{maxHeight:'200px', overflowY:'auto', border:'1px solid #eee', padding:'5px'}}>
                     {directReports.map(report => (
-                        <div key={report.id} 
-                          style={formData.associateId === report.id ? styles.reportCardActive : styles.reportCard}
+                        <div key={report.id}
+                          style={formData.associateId === (report.mail || report.id) ? styles.reportCardActive : styles.reportCard}
                           onClick={() => selectAssociate(report)}>
                             <span>{report.displayName}</span>
-                            <span style={{fontSize:'0.8em', color:'#666'}}>{report.jobTitle}</span>
+                            <span style={{fontSize:'0.8em', color:'#666'}}>{report.jobTitle || report.mail}</span>
                         </div>
                     ))}
                 </div>
@@ -232,7 +240,7 @@ const CreateCAF = () => {
             <input style={styles.input} name="associateName" value={formData.associateName} onChange={handleChange} />
           </div>
           <div style={{flex:1}}>
-             <label style={styles.label}>Associate ID / Email</label>
+             <label style={styles.label}>Associate Email</label>
              <input style={styles.input} name="associateId" value={formData.associateId} onChange={handleChange} />
           </div>
         </div>
