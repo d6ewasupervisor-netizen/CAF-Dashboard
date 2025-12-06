@@ -5,6 +5,10 @@ import { collection, addDoc, doc, getDoc, updateDoc, onSnapshot, query, orderBy 
 import SignatureCanvas from 'react-signature-canvas';
 import jsPDF from 'jspdf';
 import { TEMPLATES } from './templates';
+// --- AUTH IMPORTS ---
+import { useMsal, MsalAuthenticationTemplate } from "@azure/msal-react";
+import { InteractionType } from "@azure/msal-browser";
+import { loginRequest } from "./authConfig";
 
 // --- STYLES ---
 const styles = {
@@ -13,7 +17,7 @@ const styles = {
   inputGroup: { marginBottom: '15px' },
   input: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', boxSizing: 'border-box' },
   textarea: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', height: '80px', boxSizing: 'border-box' },
-  btn: { padding: '12px 24px', backgroundColor: '#0056b3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px' },
+  btn: { padding: '12px 24px', backgroundColor: '#0056b3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', marginRight: '10px' },
   label: { display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '14px', color: '#333' },
   sigPad: { border: '1px solid #000', width: '100%', height: '150px', backgroundColor: '#f0f0f0' },
   sectionHeader: { marginTop: '20px', marginBottom: '10px', color: '#0056b3', borderBottom: '2px solid #eee', paddingBottom: '5px' },
@@ -73,9 +77,12 @@ const generatePDF = (data) => {
   doc.save(`${data.associateName}_CAF.pdf`);
 };
 
-// 1. Dashboard
+// 1. Dashboard Component
 const Dashboard = () => {
   const [cafs, setCafs] = useState([]);
+  const { accounts } = useMsal();
+  const userName = accounts[0]?.name || "Supervisor";
+
   useEffect(() => {
     const q = query(collection(db, "cafs"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -86,8 +93,10 @@ const Dashboard = () => {
 
   return (
     <div style={styles.container}>
-      <h2>Supervisor Dashboard</h2>
-      <Link to="/create"><button style={styles.btn}>+ Create New CAF</button></Link>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '20px'}}>
+        <h2>{userName}'s Dashboard</h2>
+        <Link to="/create"><button style={styles.btn}>+ Create New CAF</button></Link>
+      </div>
       <hr />
       {cafs.map(caf => (
         <div key={caf.id} style={styles.card}>
@@ -109,23 +118,30 @@ const Dashboard = () => {
   );
 };
 
-// 2. Create Form
+// 2. Create Form Component
 const CreateCAF = () => {
   const navigate = useNavigate();
   const sigPad = useRef({});
-  const [supervisorSearch, setSupervisorSearch] = useState('');
+  const { accounts } = useMsal();
+  
+  // Auto-fill supervisor name from Azure AD
+  const currentUser = accounts[0]?.name || "";
+
+  const [supervisorSearch, setSupervisorSearch] = useState(currentUser);
   const [searchResults, setSearchResults] = useState([]);
   const [directReports, setDirectReports] = useState([]);
   const [loading, setLoading] = useState(false);
-
+  
   const [formData, setFormData] = useState({
     templateKey: 'attendance',
-    associateName: '', associateId: '', supervisorName: '',
+    associateName: '', associateId: '', 
+    supervisorName: currentUser,
     discussionDate: new Date().toISOString().split('T')[0], 
     program: '', storeLocation: '', priorDate: '', priorSubject: '',
     details: '', requiredImprovement: ''
   });
 
+  // API Search
   const searchUsers = async (term) => {
     setSupervisorSearch(term);
     if (term.length < 3) { setSearchResults([]); return; }
@@ -145,7 +161,7 @@ const CreateCAF = () => {
       const res = await fetch(`/api/users?supervisorId=${user.id}`);
       const data = await res.json();
       setDirectReports(data);
-    } catch (error) { console.error("API Error:", error); alert("Could not fetch reports."); }
+    } catch (error) { console.error("API Error:", error); }
     setLoading(false);
   };
 
@@ -158,7 +174,7 @@ const CreateCAF = () => {
   };
 
   const handleChange = (e) => setFormData({...formData, [e.target.name]: e.target.value});
-
+  
   const handleSubmit = async () => {
     if (sigPad.current.isEmpty()) return alert("Please sign the document");
     await addDoc(collection(db, "cafs"), {
@@ -173,6 +189,7 @@ const CreateCAF = () => {
 
   return (
     <div style={styles.container}>
+      <Link to="/" style={{textDecoration:'none', color:'#666'}}>← Back to Dashboard</Link>
       <h2>Create Corrective Action Form</h2>
       <div style={styles.card}>
         <h3 style={styles.sectionHeader}>1. General Information</h3>
@@ -180,7 +197,7 @@ const CreateCAF = () => {
             <label style={styles.label}>Supervisor Name (Search Directory)</label>
             <input style={styles.input} value={supervisorSearch} 
               onChange={(e) => searchUsers(e.target.value)}
-              placeholder="Start typing your name..." />
+              placeholder="Search supervisor..." />
             {searchResults.length > 0 && (
               <div style={styles.suggestions}>
                 {searchResults.map((u) => (
@@ -224,7 +241,7 @@ const CreateCAF = () => {
             <label style={styles.label}>Discussion Date</label>
             <input type="date" style={styles.input} name="discussionDate" value={formData.discussionDate} onChange={handleChange} />
         </div>
-
+        
         <div style={{display:'flex', gap:'10px'}}>
           <div style={{flex:1}}>
             <label style={styles.label}>Program</label>
@@ -237,6 +254,14 @@ const CreateCAF = () => {
         </div>
 
         <h3 style={styles.sectionHeader}>2. Details</h3>
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Infraction Type</label>
+          <select style={styles.input} name="templateKey" value={formData.templateKey} onChange={handleChange}>
+            {Object.entries(TEMPLATES).map(([key, val]) => (
+              <option key={key} value={key}>{val.label}</option>
+            ))}
+          </select>
+        </div>
         <textarea style={styles.textarea} name="details" placeholder="Infraction details..." onChange={handleChange} />
         <div style={styles.inputGroup}>
           <label style={styles.label}>Required Improvement</label>
@@ -250,7 +275,7 @@ const CreateCAF = () => {
   );
 };
 
-// 3. Associate View
+// 3. Associate View (Publicly Accessible for Signing)
 const AssociateSign = () => {
   const { id } = useParams();
   const [data, setData] = useState(null);
@@ -273,6 +298,7 @@ const AssociateSign = () => {
       <h2>Review Corrective Action Form</h2>
       <div style={styles.card}>
         <p><strong>Associate:</strong> {data.associateName}</p>
+        <p><strong>Subject:</strong> {TEMPLATES[data.templateKey]?.label}</p>
         <p><strong>Details:</strong> {data.details}</p>
       </div>
       <div style={styles.card}>
@@ -286,12 +312,24 @@ const AssociateSign = () => {
   );
 };
 
+// --- MAIN ROUTER with AUTH PROTECTION ---
 export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/create" element={<CreateCAF />} />
+        {/* Protected Routes: Require Login */}
+        <Route path="/" element={
+          <MsalAuthenticationTemplate interactionType={InteractionType.Redirect} authenticationRequest={loginRequest}>
+            <Dashboard />
+          </MsalAuthenticationTemplate>
+        } />
+        <Route path="/create" element={
+          <MsalAuthenticationTemplate interactionType={InteractionType.Redirect} authenticationRequest={loginRequest}>
+            <CreateCAF />
+          </MsalAuthenticationTemplate>
+        } />
+        
+        {/* Public Route: Associate can sign without login */}
         <Route path="/sign/:id" element={<AssociateSign />} />
       </Routes>
     </Router>
