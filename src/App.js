@@ -147,11 +147,24 @@ const CreateCAF = () => {
     const fetchDirectReports = async () => {
       if (!currentUserEmail) {
         setLoading(false);
+        setError("No user email found. Please sign in again.");
         return;
       }
       try {
+        console.log("Fetching direct reports for:", currentUserEmail);
         const res = await fetch(`/api/users?email=${encodeURIComponent(currentUserEmail)}`);
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error("API Error Response:", res.status, errorText);
+          setError(`API Error (${res.status}): ${errorText}`);
+          setLoading(false);
+          return;
+        }
+
         const data = await res.json();
+        console.log("API Response:", data);
+
         if (data.directReports) {
           setDirectReports(data.directReports);
         }
@@ -163,8 +176,8 @@ const CreateCAF = () => {
           }));
         }
       } catch (err) {
-        console.error("API Error:", err);
-        setError("Unable to load direct reports. Please try again.");
+        console.error("API Fetch Error:", err);
+        setError(`Unable to load direct reports: ${err.message}`);
       }
       setLoading(false);
     };
@@ -183,14 +196,23 @@ const CreateCAF = () => {
   
   const handleSubmit = async () => {
     if (sigPad.current.isEmpty()) return alert("Please sign the document");
-    await addDoc(collection(db, "cafs"), {
-      ...formData,
-      supervisorSignature: sigPad.current.toDataURL(),
-      status: 'Pending Associate',
-      associateComments: '',
-      timestamp: new Date()
-    });
-    navigate('/');
+    if (!formData.associateName) return alert("Please select an associate");
+
+    try {
+      console.log("Saving CAF to Firebase:", formData);
+      const docRef = await addDoc(collection(db, "cafs"), {
+        ...formData,
+        supervisorSignature: sigPad.current.toDataURL(),
+        status: 'Pending Associate',
+        associateComments: '',
+        timestamp: new Date()
+      });
+      console.log("CAF saved with ID:", docRef.id);
+      navigate('/');
+    } catch (err) {
+      console.error("Firebase Error:", err);
+      alert(`Failed to save: ${err.message}`);
+    }
   };
 
   return (
