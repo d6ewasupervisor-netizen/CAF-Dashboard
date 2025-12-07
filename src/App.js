@@ -3,7 +3,7 @@ import { HashRouter as Router, Routes, Route, Link, useParams, useNavigate } fro
 import { db } from './firebase';
 import { collection, addDoc, doc, getDoc, updateDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import SignatureCanvas from 'react-signature-canvas';
-import jsPDF from 'jspdf';
+// Lazy-load jsPDF in generatePDF to avoid pulling it into the test environment
 import { TEMPLATES } from './templates';
 // --- AUTH IMPORTS ---
 import { useMsal, MsalAuthenticationTemplate } from "@azure/msal-react";
@@ -28,7 +28,9 @@ const styles = {
 };
 
 // --- PDF GENERATOR ---
-const generatePDF = (data) => {
+const generatePDF = async (data) => {
+  const jspdfModule = await import('jspdf');
+  const jsPDF = jspdfModule.default || jspdfModule.jsPDF;
   const doc = new jsPDF();
   const template = TEMPLATES[data.templateKey];
   let y = 20; const margin = 15; const contentWidth = 180;
