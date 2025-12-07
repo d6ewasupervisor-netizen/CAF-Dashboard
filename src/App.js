@@ -82,24 +82,31 @@ const Dashboard = () => {
   const [cafs, setCafs] = useState([]);
   const [directReports, setDirectReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const { accounts } = useMsal();
   const userName = accounts[0]?.name || "Supervisor";
-  const userId = accounts[0]?.localAccountId || "";
+  const userIdentifier = accounts[0]?.username || accounts[0]?.localAccountId || "";
 
-  // Fetch current user's direct reports
+  // Fetch current user's direct reports (if available)
   useEffect(() => {
     const loadDirectReports = async () => {
-      if (!userId) return;
+      if (!userIdentifier) return;
+      setReportsLoading(true);
       try {
-        const res = await fetch(`/api/users?supervisorId=${userId}`);
+        const res = await fetch(`/api/users?supervisorId=${userIdentifier}`);
+        if (!res.ok) throw new Error('Failed to load reports');
         const data = await res.json();
-        setDirectReports(data);
-      } catch (error) { console.error("Error loading direct reports:", error); }
+        setDirectReports(data || []);
+      } catch (err) {
+        console.error('Error loading direct reports:', err);
+        setDirectReports([]);
+      }
+      setReportsLoading(false);
     };
     loadDirectReports();
-  }, [userId]);
+  }, [userIdentifier]);
 
-  // Fetch all CAFs and filter by direct reports
+  // Fetch all CAFs and keep realtime subscription
   useEffect(() => {
     const q = query(collection(db, "cafs"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -109,11 +116,9 @@ const Dashboard = () => {
     return unsubscribe;
   }, []);
 
-  // Filter CAFs to only show those for my direct reports
+  // Decide which CAFs to display: if we have direct reports, show those; otherwise show all
   const directReportIds = directReports.map(dr => dr.id);
-  const filteredCafs = directReportIds.length > 0
-    ? cafs.filter(caf => directReportIds.includes(caf.associateId))
-    : [];
+  const displayCafs = directReportIds.length > 0 ? cafs.filter(caf => directReportIds.includes(caf.associateId)) : cafs;
 
   return (
     <div style={styles.container}>
@@ -122,14 +127,12 @@ const Dashboard = () => {
         <Link to="/create"><button style={styles.btn}>+ Create New CAF</button></Link>
       </div>
       <hr />
-      {loading ? (
+      {loading || reportsLoading ? (
         <p>Loading...</p>
-      ) : filteredCafs.length === 0 ? (
-        <p style={{textAlign: 'center', color: '#666', padding: '40px'}}>
-          No corrective action forms found for your direct reports.
-        </p>
+      ) : displayCafs.length === 0 ? (
+        <p style={{textAlign: 'center', color: '#666', padding: '40px'}}>No corrective action forms found.</p>
       ) : (
-        filteredCafs.map(caf => (
+        displayCafs.map(caf => (
           <div key={caf.id} style={styles.card}>
             <h3>{caf.associateName} - {TEMPLATES[caf.templateKey]?.label}</h3>
             <p>Status: <strong style={{color: caf.status === 'Completed' ? 'green' : 'orange'}}>{caf.status}</strong></p>
@@ -156,10 +159,9 @@ const CreateCAF = () => {
   const navigate = useNavigate();
   const sigPad = useRef({});
   const { accounts } = useMsal();
-
-  // Auto-fill supervisor name and ID from Azure AD
+  
+  // Auto-fill supervisor name from Azure AD
   const currentUser = accounts[0]?.name || "";
-  const currentUserId = accounts[0]?.localAccountId || "";
 
   const [supervisorSearch, setSupervisorSearch] = useState(currentUser);
   const [searchResults, setSearchResults] = useState([]);
@@ -174,21 +176,6 @@ const CreateCAF = () => {
     program: '', storeLocation: '', priorDate: '', priorSubject: '',
     details: '', requiredImprovement: ''
   });
-
-  // Auto-load current user's direct reports on mount
-  useEffect(() => {
-    const loadMyDirectReports = async () => {
-      if (!currentUserId) return;
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/users?supervisorId=${currentUserId}`);
-        const data = await res.json();
-        setDirectReports(data);
-      } catch (error) { console.error("Error loading direct reports:", error); }
-      setLoading(false);
-    };
-    loadMyDirectReports();
-  }, [currentUserId]);
 
   // API Search
   const searchUsers = async (term) => {
@@ -226,14 +213,20 @@ const CreateCAF = () => {
   
   const handleSubmit = async () => {
     if (sigPad.current.isEmpty()) return alert("Please sign the document");
-    await addDoc(collection(db, "cafs"), {
-      ...formData,
-      supervisorSignature: sigPad.current.toDataURL(),
-      status: 'Pending Associate',
-      associateComments: '',
-      timestamp: new Date()
-    });
-    navigate('/');
+    
+    try {
+      await addDoc(collection(db, "cafs"), {
+        ...formData,
+        supervisorSignature: sigPad.current.toDataURL(),
+        status: 'Pending Associate',
+        associateComments: '',
+        timestamp: new Date()
+      });
+      navigate('/');
+    } catch (error) {
+      console.error("Error saving document: ", error);
+      alert("Error saving document: " + error.message + "\n\n(Did you enable Firestore 'Test Mode' rules?)");
+    }
   };
 
   return (
