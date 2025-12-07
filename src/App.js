@@ -33,6 +33,7 @@ const generatePDF = async (data) => {
   const jsPDF = jspdfModule.default || jspdfModule.jsPDF;
   const doc = new jsPDF();
   const template = TEMPLATES[data.templateKey];
+  const subject = data.subject || template?.subject || '';
   let y = 20; const margin = 15; const contentWidth = 180;
 
   const addText = (text, size = 10, font = 'normal', color = 'black') => {
@@ -48,7 +49,7 @@ const generatePDF = async (data) => {
   doc.text(`Supervisor Name: ${data.supervisorName}`, margin, y); y += 12;
   doc.setFillColor(230, 230, 230); doc.rect(margin, y - 6, contentWidth, 8, 'F');
   doc.setFont(undefined, 'bold'); doc.text("CORRECTIVE ACTION FORM", 105, y, null, null, "center"); y += 10;
-  doc.setFont(undefined, 'normal'); doc.text(`Subject: ${template.subject}`, margin, y); doc.text(`Discussion Date: ${data.discussionDate}`, 105, y); y += 8;
+  doc.setFont(undefined, 'normal'); doc.text(`Subject: ${subject}`, margin, y); doc.text(`Discussion Date: ${data.discussionDate}`, 105, y); y += 8;
   doc.text(`Program: ${data.program}`, margin, y); doc.text(`City/State/Store #: ${data.storeLocation}`, 105, y); y += 8;
   doc.text("Prior Notifications:", margin, y); doc.text(`Date: ${data.priorDate || 'N/A'}`, 80, y); doc.text(`Subject: ${data.priorSubject || 'N/A'}`, 130, y); y += 12;
   addText("SPECIFIC DETAILS OF CURRENT CONDUCT:", 10, 'bold');
@@ -176,7 +177,8 @@ const CreateCAF = () => {
     supervisorName: currentUser,
     discussionDate: new Date().toISOString().split('T')[0],
     program: '', storeLocation: '', priorDate: '', priorSubject: '',
-    details: '', requiredImprovement: ''
+    details: '', requiredImprovement: '',
+    subject: (TEMPLATES['attendance']?.subjects && TEMPLATES['attendance'].subjects[0]) || TEMPLATES['attendance']?.subject
   });
 
   // API Search
@@ -211,7 +213,16 @@ const CreateCAF = () => {
     });
   };
 
-  const handleChange = (e) => setFormData({...formData, [e.target.name]: e.target.value});
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'templateKey') {
+      const tpl = TEMPLATES[value];
+      const newSubject = (tpl?.subjects && tpl.subjects[0]) || tpl?.subject || '';
+      setFormData({ ...formData, templateKey: value, subject: newSubject });
+      return;
+    }
+    setFormData({ ...formData, [name]: value });
+  };
   
   const handleSubmit = async () => {
     if (sigPad.current.isEmpty()) return alert("Please sign the document");
@@ -306,6 +317,14 @@ const CreateCAF = () => {
             ))}
           </select>
         </div>
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Subject</label>
+          <select style={styles.input} name="subject" value={formData.subject} onChange={handleChange}>
+            {(TEMPLATES[formData.templateKey]?.subjects || [TEMPLATES[formData.templateKey]?.subject]).map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
         <textarea style={styles.textarea} name="details" placeholder="Infraction details..." onChange={handleChange} />
         <div style={styles.inputGroup}>
           <label style={styles.label}>Required Improvement</label>
@@ -342,7 +361,7 @@ const AssociateSign = () => {
       <h2>Review Corrective Action Form</h2>
       <div style={styles.card}>
         <p><strong>Associate:</strong> {data.associateName}</p>
-        <p><strong>Subject:</strong> {TEMPLATES[data.templateKey]?.label}</p>
+        <p><strong>Subject:</strong> {data.subject || TEMPLATES[data.templateKey]?.subject || TEMPLATES[data.templateKey]?.label}</p>
         <p><strong>Details:</strong> {data.details}</p>
       </div>
       <div style={styles.card}>
